@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cost Data Rectification Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS for Excel processing -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <style>
+        .drop-zone {
+            border: 2px dashed #cbd5e1;
+            transition: all 0.3s ease;
+        }
+        .drop-zone.dragover {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800 font-sans">
+
+    <div class="max-w-4xl mx-auto p-6">
+        <!-- Header -->
+        <div class="mb-10 text-center">
+            <h1 class="text-3xl font-bold text-slate-900 mb-2">Cost Data Rectification Tool</h1>
+            <p class="text-slate-600">Upload your raw cost data to automatically identify conflicting Posting Dates and fix the "Actual Month" column.</p>
+        </div>
+
+        <!-- Main Card -->
+        <div class="bg-white rounded-xl shadow-lg p-8">
+            
+            <!-- Step 1: Upload -->
+            <div class="mb-8">
+                <h2 class="text-lg font-semibold mb-4 flex items-center">
+                    <span class="bg-blue-100 text-blue-600 w-8 h-8 rounded-full flex items-center justify-center mr-3 text-sm">1</span>
+                    Upload Data File
+                </h2>
+                
+                <div id="drop-zone" class="drop-zone rounded-lg p-10 text-center cursor-pointer hover:bg-slate-50 relative">
+                    <input type="file" id="fileInput" accept=".csv, .xlsx, .xls" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                    <div class="space-y-2">
+                        <svg class="w-12 h-12 text-slate-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                        </svg>
+                        <p class="text-slate-600 font-medium">Click to upload or drag and drop</p>
+                        <p class="text-sm text-slate-400">Supports .xlsx or .csv</p>
+                        <p id="fileName" class="text-sm text-blue-600 font-semibold mt-2 hidden"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2: Process -->
+            <div class="mb-8 opacity-50 pointer-events-none transition-opacity" id="step2">
+                <h2 class="text-lg font-semibold mb-4 flex items-center">
+                    <span class="bg-blue-100 text-blue-600 w-8 h-8 rounded-full flex items-center justify-center mr-3 text-sm">2</span>
+                    Process Data
+                </h2>
+                <div class="flex items-center justify-between bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <div>
+                        <p class="text-sm text-slate-600">Ready to analyze discrepancies.</p>
+                    </div>
+                    <button id="processBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                        Run Rectification
+                    </button>
+                </div>
+                <div id="loading" class="hidden mt-4 text-center text-blue-600">
+                    <span class="inline-block animate-spin mr-2">⟳</span> Processing...
+                </div>
+            </div>
+
+            <!-- Step 3: Results -->
+            <div id="resultsArea" class="hidden">
+                <div class="border-t border-slate-200 my-6"></div>
+                
+                <h2 class="text-lg font-semibold mb-4 flex items-center text-green-700">
+                    <span class="bg-green-100 text-green-700 w-8 h-8 rounded-full flex items-center justify-center mr-3 text-sm">✓</span>
+                    Analysis Complete
+                </h2>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div class="bg-red-50 p-4 rounded-lg border border-red-100">
+                        <p class="text-sm text-red-600 uppercase font-bold tracking-wider">Discrepancies Found</p>
+                        <p class="text-3xl font-bold text-red-700 mt-1" id="errorCount">0</p>
+                        <p class="text-xs text-red-500 mt-1">Groups with multiple dates</p>
+                    </div>
+                    <div class="bg-green-50 p-4 rounded-lg border border-green-100">
+                        <p class="text-sm text-green-600 uppercase font-bold tracking-wider">Rows Processed</p>
+                        <p class="text-3xl font-bold text-green-700 mt-1" id="rowCount">0</p>
+                    </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row gap-4">
+                    <button id="downloadSummary" class="flex-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-3 rounded-lg font-medium transition-colors shadow-sm flex items-center justify-center">
+                        <svg class="w-5 h-5 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        Download Summary Report
+                    </button>
+                    <button id="downloadCorrected" class="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg font-medium transition-colors shadow-sm flex items-center justify-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        Download Corrected File
+                    </button>
+                </div>
+            </div>
+
+        </div>
+        
+        <div class="mt-8 text-center text-sm text-slate-400">
+            <p>Processing happens entirely in your browser. No data is uploaded to any server.</p>
+        </div>
+    </div>
+
+    <script>
+        // --- Logic Implementation ---
+
+        let rawData = [];
+        let workbook = null;
+        let fileInput = document.getElementById('fileInput');
+        let dropZone = document.getElementById('drop-zone');
+        let fileNameDisplay = document.getElementById('fileName');
+        let step2 = document.getElementById('step2');
+        let processBtn = document.getElementById('processBtn');
+        let loading = document.getElementById('loading');
+        let resultsArea = document.getElementById('resultsArea');
+        let errorCountEl = document.getElementById('errorCount');
+        let rowCountEl = document.getElementById('rowCount');
+
+        // State for generated files
+        let summaryWorksheet = null;
+        let correctedWorksheet = null;
+
+        // --- Event Listeners for Drag & Drop ---
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight(e) {
+            dropZone.classList.add('dragover');
+        }
+
+        function unhighlight(e) {
+            dropZone.classList.remove('dragover');
+        }
+
+        dropZone.addEventListener('drop', handleDrop, false);
+        fileInput.addEventListener('change', handleFiles, false);
+
+        function handleDrop(e) {
+            let dt = e.dataTransfer;
+            let files = dt.files;
+            handleFiles({ target: { files: files } });
+        }
+
+        function handleFiles(e) {
+            let file = e.target.files[0];
+            if (!file) return;
+
+            fileNameDisplay.textContent = `Selected: ${file.name}`;
+            fileNameDisplay.classList.remove('hidden');
+            
+            // Activate Step 2
+            step2.classList.remove('opacity-50', 'pointer-events-none');
+            
+            // Read the file immediately to memory
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                
+                // Assuming data is in the first sheet
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                // Convert to JSON
+                rawData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                console.log("File loaded", rawData.length, "rows");
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // --- Processing Logic ---
+        processBtn.addEventListener('click', () => {
+            loading.classList.remove('hidden');
+            processBtn.disabled = true;
+            processBtn.classList.add('opacity-75');
+
+            // Small timeout to allow UI to render loading state
+            setTimeout(() => {
+                try {
+                    processData(rawData);
+                    loading.classList.add('hidden');
+                    processBtn.disabled = false;
+                    processBtn.classList.remove('opacity-75');
+                    resultsArea.classList.remove('hidden');
+                } catch (err) {
+                    console.error(err);
+                    alert("An error occurred while processing: " + err.message);
+                    loading.classList.add('hidden');
+                    processBtn.disabled = false;
+                }
+            }, 100);
+        });
+
+        function processData(data) {
+            // 1. Group by Document No. and Item No.
+            const groups = {};
+            
+            // Helper to parse dates robustly
+            const parseDate = (val) => {
+                if (val instanceof Date) return val;
+                if (!val) return null;
+                const d = new Date(val);
+                return isNaN(d.getTime()) ? null : d;
+            };
+
+            // Identify groups and collect data
+            data.forEach((row, index) => {
+                const docNo = row['Document No.'];
+                const itemNo = row['Item No.'];
+                const postingDateVal = row['Posting Date'];
+                const cost = parseFloat(row['Cost Amount (Actual)']) || 0;
+                
+                // Key for the group
+                const key = `${docNo}|${itemNo}`;
+
+                if (!groups[key]) {
+                    groups[key] = {
+                        docNo: docNo,
+                        itemNo: itemNo,
+                        dates: [], // Store raw dates/strings to check uniqueness
+                        parsedDates: [], // Store date objects for sorting
+                        totalCost: 0,
+                        rows: []
+                    };
+                }
+
+                const dateObj = parseDate(postingDateVal);
+                
+                // We use a string representation for uniqueness check
+                const dateStr = dateObj ? dateObj.toISOString().split('T')[0] : String(postingDateVal);
+
+                groups[key].rows.push(index); // Store index to update original data later
+                groups[key].totalCost += cost;
+                
+                if (!groups[key].dates.includes(dateStr)) {
+                    groups[key].dates.push(dateStr);
+                    if(dateObj) groups[key].parsedDates.push(dateObj);
+                }
+            });
+
+            // 2. Identify Wrong Groups
+            const wrongGroups = [];
+            const correctMap = {}; // Map key -> correct Month String
+
+            Object.keys(groups).forEach(key => {
+                const group = groups[key];
+                if (group.dates.length > 1) {
+                    // This is a wrong group
+                    wrongGroups.push(group);
+
+                    // Find oldest date
+                    // Sort parsed dates ascending
+                    group.parsedDates.sort((a, b) => a - b);
+                    const oldestDate = group.parsedDates[0];
+                    
+                    if (oldestDate) {
+                        // Format: MMM YYYY (e.g., DEC 2025)
+                        const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+                        const monthStr = `${monthNames[oldestDate.getMonth()]} ${oldestDate.getFullYear()}`;
+                        correctMap[key] = monthStr;
+                    }
+                }
+            });
+
+            // 3. Create Summary Data
+            const summaryData = wrongGroups.map(g => ({
+                "Document No.": g.docNo,
+                "Item No.": g.itemNo,
+                "Cost Amount (Actual)": g.totalCost,
+                "Conflicting Posting Dates": g.dates.join(", ")
+            }));
+
+            // 4. Create Corrected Data
+            // Deep copy rawData to avoid mutating original source if re-run
+            const correctedData = JSON.parse(JSON.stringify(rawData));
+            
+            // Loop through and update
+            correctedData.forEach(row => {
+                const key = `${row['Document No.']}|${row['Item No.']}`;
+                if (correctMap[key]) {
+                    row['Actual Month'] = correctMap[key];
+                }
+            });
+
+            // Update UI Stats
+            errorCountEl.textContent = wrongGroups.length;
+            rowCountEl.textContent = rawData.length;
+
+            // Prepare Worksheets for Download
+            summaryWorksheet = XLSX.utils.json_to_sheet(summaryData);
+            correctedWorksheet = XLSX.utils.json_to_sheet(correctedData);
+
+            // Bind Download Buttons
+            document.getElementById('downloadSummary').onclick = () => downloadExcel(summaryWorksheet, "Summary_of_Incorrect_Entries.xlsx");
+            document.getElementById('downloadCorrected').onclick = () => downloadExcel(correctedWorksheet, "Corrected_Item_Value_Entries.xlsx");
+        }
+
+        function downloadExcel(worksheet, filename) {
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, worksheet, "Sheet1");
+            XLSX.writeFile(wb, filename);
+        }
+
+    </script>
+</body>
+</html>
